@@ -1,5 +1,6 @@
 ﻿#include <stdio.h>
 #include <iostream>
+#include <cuda.h>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #define CUSTOMMERS 400
@@ -12,6 +13,25 @@ using namespace std;
 __global__ void GPU_serving_dishes(int round_offset, bool* plates) 
 {
 	int gId = threadIdx.x + round_offset;
+	plates[gId] = true;
+}
+
+
+__global__ void GPU_finish_eating_and_picking_up_plates(bool* plates, float* eating_times)
+{
+	int gId = threadIdx.x;
+	clock_t start_clock = clock();
+	clock_t clock_offset = 0;
+	float waiting_time = 100000000 * eating_times[gId];
+	while (clock_offset < waiting_time)
+	{
+		clock_offset = clock() - start_clock;
+	}
+	waiting_time = 100000000 * 2;
+	while (clock_offset < waiting_time)
+	{
+		clock_offset = clock() - start_clock;
+	}
 	plates[gId] = true;
 }
 
@@ -64,11 +84,11 @@ __host__ void fillRandomNumbersList(float* randomNumbersList, int size)
 {
 	for (int i = 0; i < size; i++)
 	{
-		randomNumbersList[i] = getRangeRandom();
+		randomNumbersList[i] = getRangeRandom()+1;
 	}
 }
 
-__host__ void CPU_cleaning_table_and_picking_up_plates() {
+__host__ void CPU_finish_eating_and_picking_up_plates() {
 	int serving_rounds = CUSTOMMERS / (TABLES * WAITERS_PER_TABLE);
 
 	bool* host_customers_plate;
@@ -88,6 +108,11 @@ __host__ void CPU_cleaning_table_and_picking_up_plates() {
 	fillRandomNumbersList(host_random_eating_times, CUSTOMMERS);
 
 	cudaMemcpy(dev_customers_plate, host_customers_plate, CUSTOMMERS * sizeof(bool), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_random_eating_times, host_random_eating_times, CUSTOMMERS * sizeof(float), cudaMemcpyHostToDevice);
+	dim3 block(CUSTOMMERS);
+	GPU_finish_eating_and_picking_up_plates << < 1, block >> > (dev_customers_plate,dev_random_eating_times);
+	cudaMemcpy(host_customers_plate, dev_customers_plate, CUSTOMMERS * sizeof(bool), cudaMemcpyDeviceToHost);
+	cudaMemcpy(host_random_eating_times, dev_random_eating_times, CUSTOMMERS * sizeof(float), cudaMemcpyDeviceToHost);
 
 	free(host_customers_plate);
 	cudaFree(dev_customers_plate);
@@ -102,10 +127,26 @@ int main() {
 	printf("Serving food...\n");
 	CPU_serving_dishes();
 	printf("Food served\n");
-	/*
+	
 	printf("People Eating...\n");
-	CPU_cleaning_table_and_picking_up_plates();
-	printf("Some People Finishing\n");
-	*/
+	CPU_finish_eating_and_picking_up_plates();
+	printf("People Finish eating and plates picked up\n");
+
+	printf("Serving food...\n");
+	CPU_serving_dishes();
+	printf("Food served\n");
+
+	printf("People Eating...\n");
+	CPU_finish_eating_and_picking_up_plates();
+	printf("People Finish eating and plates picked up\n");
+
+	printf("Serving food...\n");
+	CPU_serving_dishes();
+	printf("Food served\n");
+
+	printf("People Eating...\n");
+	CPU_finish_eating_and_picking_up_plates();
+	printf("People Finish eating and plates picked up\n");
+	
 	return 0;
 }
